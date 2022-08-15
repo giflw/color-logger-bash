@@ -38,6 +38,7 @@ COLOR_MAGENTA_BG=45         # set magenta background
 COLOR_CYAN_BG=46            # set cyan background
 COLOR_WHITE_BG=47           # set white background
 
+COLOR_TRACE=$COLOR_WHITE
 COLOR_DEBUG=$COLOR_BLUE
 COLOR_INFO=$COLOR_MAGENTA
 COLOR_HIGHLIGHT=$COLOR_CYAN
@@ -55,127 +56,164 @@ logger_wrap_escape() {
   fi
 
   if [ -z "$message" ]; then
-    echo "No message passed in"
+    echo "No message passed in" >&2 && return 1
 
     exit 1
   fi
 
   message="${COLOR_ESC}${paint}m${message}${COLOR_ESC}${COLOR_RESET}m"
 
-  echo -ne "$message"
+  echo -ne "$message" >&2
+}
+
+function contains {
+  local list=$1
+  local item=$2
+  [[ $list =~ (^|[[:space:]])"$item"($|[[:space:]]) ]]
 }
 
 logger_color(){
+  local level="$1"
+  if contains "TRCE DEBG INFO WARN ERRR SCSS ::::" $level; then
+	shift
+  fi
   local paint="$1"
   shift
 
-  for message in "$@";
+  for message in "[$level] $@";
   do
     logger_wrap_escape "$paint" "$message"
   done
 
-  echo
+  echo >&2
 }
 
 # PUBLIC API
+log () {
+	level=$1
+	shift
+	logger_color $level "$COLOR_TRACE" "$@"
+}
+
+enable-colon-debug() {
+	function : {
+		log '::::' "$@"
+	}
+}
+
+disable-colon-debug() {
+	unset -f :
+}
+
+trace(){
+  logger_color TRCE "$COLOR_DEBUG" "$@"
+}
+
 debug(){
-  logger_color "$COLOR_DEBUG" "$@"
+  logger_color DEBG "$COLOR_DEBUG" "$@"
 }
 
 info(){
-  logger_color "$COLOR_INFO" "$@"
+  logger_color INFO "$COLOR_INFO" "$@"
 }
 
 warn(){
-  logger_color "$COLOR_WARN" "$@"
+  logger_color WARN "$COLOR_WARN" "$@"
 }
 
 error(){
-  logger_color "$COLOR_ERROR" "$@"
-}
-
-highlight(){
-  logger_wrap_escape $COLOR_HIGHLIGHT "$1"
+  logger_color ERRR "$COLOR_ERROR" "$@"
 }
 
 success(){
-  logger_color "$COLOR_SUCCESS" "$@"
+  logger_color SCSS "$COLOR_SUCCESS" "$@"
 }
+
+highlight(){
+  logger_wrap_escape $COLOR_HIGHLIGHT "$1" &> /dev/stdout
+  echo
+}
+
 # END PUBLIC API
 
-show_help() {
-  cat << EOF
-NAME
-  $COLOR_SCRIPT - Add color logging to bash scripts.
+(return 0 2>/dev/null) && sourced=1 || sourced=0
 
-SYNOPSIS
-  color-logger.bash [-hcv] logger_function
+if [ $sourced -eq 0 ]; then
 
-DESCRIPTION
-  Ideal use is to "source $COLOR_SCRIPT" and then use a logger_function directly in script.
+	show_help() {
+	  cat << EOF
+	NAME
+	  $COLOR_SCRIPT - Add color logging to bash scripts.
 
-  logger_functions: debug, info, warn, error, success, highlight
+	SYNOPSIS
+	  color-logger.bash [-hcv] logger_function
 
-  e.g. 'debug "debug message"'
+	DESCRIPTION
+	  Ideal use is to "source $COLOR_SCRIPT" and then use a logger_function directly in script.
 
-  highlight is a special case. It can be used in conjunection with other logging functions.
+	  logger_functions: debug, info, warn, error, success, highlight
 
-  e.g. 'error "epic" "\$(highlight "fail")" "as usual"'
+	  e.g. 'debug "debug message"'
 
-OPTIONS
-  -h          Show help
-  -c          Show some pretty colors
-  -v          Show version
+	  highlight is a special case. It can be used in conjunection with other logging functions.
+
+	  e.g. 'error "epic" "\$(highlight "fail")" "as usual"'
+
+	OPTIONS
+	  -h          Show help
+	  -c          Show some pretty colors
+	  -v          Show version
 EOF
-}
+	}
 
-list_colors(){
-  local T='gYw'
+	list_colors(){
+	  local T='gYw'
 
-  echo -e "\n                 40m     41m     42m     43m     44m     45m     46m     47m";
+	  echo -e "\n                 40m     41m     42m     43m     44m     45m     46m     47m";
 
-  for FGs in '   0m' '   1m' '  30m' '1;30m' '  31m' '1;31m' \
-    '  32m' '1;32m' '  33m' '1;33m' '  34m' '1;34m' \
-    '  35m' '1;35m' '  36m' '1;36m' '  37m' '1;37m';
-  do
-    FG=${FGs// /}
-    echo -en " $FGs \033[$FG  $T  "
+	  for FGs in '   0m' '   1m' '  30m' '1;30m' '  31m' '1;31m' \
+		'  32m' '1;32m' '  33m' '1;33m' '  34m' '1;34m' \
+		'  35m' '1;35m' '  36m' '1;36m' '  37m' '1;37m';
+	  do
+		FG=${FGs// /}
+		echo -en " $FGs \033[$FG  $T  "
 
-    for BG in 40m 41m 42m 43m 44m 45m 46m 47m; do
-      echo -en " \033[$FG\033[$BG  $T  \033[0m";
-    done
+		for BG in 40m 41m 42m 43m 44m 45m 46m 47m; do
+		  echo -en " \033[$FG\033[$BG  $T  \033[0m";
+		done
 
-    echo;
-  done
+		echo;
+	  done
 
-  echo;
-  echo "For what maps the rows and columns to this script you just need to examine $COLOR_SCRIPT"
-}
+	  echo;
+	  echo "For what maps the rows and columns to this script you just need to examine $COLOR_SCRIPT"
+	}
 
-show_version(){
-  echo $COLOR_VERSION
-}
+	show_version(){
+	  echo $COLOR_VERSION
+	}
 
-OPTIND=1
-while getopts "hcv" opt; do
-  case "$opt" in
-    h)
-      show_help
-      exit 0
-      ;;
-    c)
-      list_colors
-      exit 0
-      ;;
-    v)
-      show_version
-      exit 0
-      ;;
-    '?')
-      show_help >&2
-      exit 1
-      ;;
-  esac
-done
+	OPTIND=1
+	while getopts "hcv" opt; do
+	  case "$opt" in
+		h)
+		  show_help
+		  exit 0
+		  ;;
+		c)
+		  list_colors
+		  exit 0
+		  ;;
+		v)
+		  show_version
+		  exit 0
+		  ;;
+		'?')
+		  show_help >&2
+		  exit 1
+		  ;;
+	  esac
+	done
 
-shift "$((OPTIND-1))" # Shift off the options and optional --.
+	shift "$((OPTIND-1))" # Shift off the options and optional --.
+fi
